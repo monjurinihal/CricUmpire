@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>CricUmpire Pro - Mobile Umpiring & Live P2P Scoring</title>
+  <title>EP Sporting Club Pro - Mobile Umpiring & Live P2P Scoring</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
@@ -106,7 +106,7 @@
       </div>
       <div>
         <h1 class="font-black text-sm tracking-tight text-slate-900 leading-tight">
-          CricUmpire <span class="text-emerald-700 text-[10px] font-bold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-200">LIVE CLOUD</span>
+          EP Sporting Club <span class="text-emerald-700 text-[10px] font-bold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-200">LIVE CLOUD</span>
         </h1>
         <p id="headerMatchStatus" class="text-[11px] text-slate-500 font-medium truncate max-w-[170px]">Setup Teams to Start</p>
       </div>
@@ -544,7 +544,7 @@
 
         <div class="border-t border-slate-200 pt-2 text-[10px] text-slate-400 font-semibold flex justify-between">
           <span id="scMatchTimestamp">Match Date</span>
-          <span>CricUmpire P2P Live</span>
+          <span>EP Sporting Club P2P Live</span>
         </div>
       </div>
 
@@ -1334,6 +1334,31 @@
       } catch (err) {
         console.error('QR Render err', err);
       }
+    }
+
+    function updateSpectatorCountUI() {
+      const badge = document.getElementById('modalSpectatorCount');
+      if (!badge) return;
+      if (window.isCloudReady) {
+        badge.textContent = 'Cloud Active (Online)';
+        badge.className = 'font-black text-emerald-800 text-sm';
+      } else {
+        badge.textContent = 'Offline (Local Only)';
+        badge.className = 'font-black text-slate-600 text-sm';
+      }
+    }
+
+    function shareScoreViaWhatsApp() {
+      const inn = getCurrentInnings();
+      let msg = '';
+      if (!match.isInitialized || !inn) {
+        msg = `Follow live match scores on EP Sporting Club: ${getShareableUrl()}`;
+      } else {
+        const striker = inn.batters[inn.strikerIndex] || { name: 'Batter', runs: 0, balls: 0 };
+        msg = `🏏 *Live Cricket Score Update*\n*${inn.battingTeamName}*: ${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)}/${match.totalOvers} ov)\n*On Strike*: ${striker.name} ${striker.runs}* (${striker.balls}b)\n\nFollow live ball-by-ball here:\n${getShareableUrl()}`;
+      }
+      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, '_blank');
     }
 
     function openBroadcastModal() {
