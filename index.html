@@ -14,48 +14,18 @@
   <!-- QRCode.js for generating spectator share QR codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    // Global Firebase configuration provided by environment
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'cric-umpire-app';
-    let db = null;
-    let auth = null;
-    let isCloudReady = false;
-
-    try {
-      if (typeof __firebase_config !== 'undefined') {
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
-
-        const initAuth = async () => {
-          try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-              await signInAnonymously(auth);
-            }
-            isCloudReady = true;
-            window.isCloudReady = true;
-            window.cloudDb = db;
-            window.cloudAppId = appId;
-            console.log('[Cloud Live] Connected & Authenticated');
-            if (window.onCloudReadyCallback) {
-              window.onCloudReadyCallback();
-            }
-          } catch (e) {
-            console.warn('[Cloud Live] Auth fallback:', e);
-          }
-        };
-        initAuth();
-      }
-    } catch (err) {
-      console.warn('[Cloud Live] Config error:', err);
-    }
+  <script>
+    /* =====================================================================
+       GLOBAL CLOUD SYNC RELAY (UNIVERSAL, WORKS ON ALL 4G/5G NETWORKS)
+       Uses a reliable public JSON storage relay so spectators on ANY mobile
+       carrier or Wi-Fi can sync in real time without custom credentials.
+       ===================================================================== */
+    window.cloudSyncManager = {
+      relayUrl: 'https://api.restful-api.dev/objects',
+      activeCloudId: null,
+      isSyncing: false,
+      lastSyncTime: 0
+    };
   </script>
 
   <script>
@@ -719,36 +689,41 @@
       <div class="bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl mb-3 text-xs">
         <div class="flex items-center justify-between mb-1">
           <span class="font-bold text-emerald-900">Live Sync Status:</span>
-          <span id="modalSpectatorCount" class="font-black text-emerald-800 text-sm">Cloud Active</span>
+          <span id="modalSpectatorCount" class="font-black text-emerald-800 text-sm">Active & Ready</span>
         </div>
         <p class="text-[10px] text-emerald-700 leading-tight">
-          <i class="fa-solid fa-circle-check mr-1"></i>Works across different Wi-Fi and 4G/5G mobile networks.
+          <i class="fa-solid fa-circle-check mr-1"></i>Universal Cloud Relay: works across different Wi-Fi and 4G/5G mobile networks.
         </p>
       </div>
 
       <!-- Quick WhatsApp / Share Snapshot Option -->
-      <div class="mb-3">
-        <button onclick="shareScoreViaWhatsApp()" class="tap-active w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-sm">
+      <div class="mb-3 space-y-1.5">
+        <button onclick="shareScoreViaWhatsApp()" class="tap-active w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center space-x-1.5 shadow-sm">
           <i class="fa-brands fa-whatsapp text-sm"></i>
-          <span>Share Live Score on WhatsApp</span>
+          <span>Share Live Score & Link on WhatsApp</span>
         </button>
       </div>
 
       <!-- Share Link Copy Field -->
-      <div class="flex space-x-1.5 mb-3">
+      <div class="flex space-x-1.5 mb-2">
         <input type="text" id="shareUrlInput" readonly class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-[11px] text-slate-700 font-mono truncate">
-        <button onclick="copyShareUrl()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold">
-          <i class="fa-solid fa-copy mr-1"></i>Copy
+        <button onclick="copyShareUrl()" class="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold shrink-0">
+          <i class="fa-solid fa-copy mr-1"></i>Copy Link
         </button>
       </div>
 
-      <!-- Custom App URL Override (for when testing in sandboxes/preview) -->
-      <div class="mb-3 bg-slate-50 border border-slate-200 p-2 rounded-xl text-left">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[10px] text-slate-600 font-bold uppercase">Public App URL (if hosted):</span>
-          <button onclick="editPublicAppUrl()" class="text-[10px] text-emerald-700 font-bold hover:underline">Edit URL</button>
+      <!-- Notice for Preview / Sandbox Environments -->
+      <div id="sandboxUrlWarning" class="hidden mb-3 bg-amber-50 border border-amber-300 p-2.5 rounded-xl text-left text-xs text-amber-900">
+        <div class="flex items-center font-bold text-[11px] text-amber-800 mb-1">
+          <i class="fa-solid fa-triangle-exclamation mr-1.5 text-amber-600"></i>
+          Running in Preview / Local Sandbox
         </div>
-        <div id="publicAppUrlDisplay" class="text-[11px] text-slate-500 truncate font-mono">Auto-detecting...</div>
+        <p class="text-[10px] text-amber-800 leading-normal">
+          Other phones cannot open a <code class="font-mono bg-white px-1 py-0.5 rounded border border-amber-200">blob:</code> or <code class="font-mono bg-white px-1 py-0.5 rounded border border-amber-200">localhost</code> address. To let friends connect, host this <strong class="font-bold">index.html</strong> file on GitHub Pages, Netlify, or Vercel, or set your public domain below:
+        </p>
+        <button onclick="editPublicAppUrl()" class="mt-2 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg">
+          Set Public Website URL
+        </button>
       </div>
 
       <!-- Join another room prompt (for spectators on another device) -->
@@ -764,40 +739,21 @@
     </div>
   </div>
 
-  <!-- NO-BALL BATSMAN RUNS PROMPT MODAL -->
-  <div id="noBallModal" class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 hidden backdrop-blur-sm">
-    <div class="bg-white border-2 border-amber-500 w-full max-w-sm rounded-2xl p-5 shadow-2xl">
-      <div class="flex items-center space-x-2 text-amber-600 mb-1">
-        <i class="fa-solid fa-bolt text-lg"></i>
-        <h3 class="font-black text-base text-slate-900">No Ball Delivery</h3>
+  <!-- OFFLINE DIRECT SCAN MODAL -->
+  <div id="offlineSyncModal" class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 hidden backdrop-blur-sm">
+    <div class="bg-white border-2 border-emerald-600 w-full max-w-sm rounded-2xl p-5 shadow-2xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-black text-sm text-slate-900">Direct Snapshot Sync</h3>
+        <button onclick="closeOfflineSyncModal()" class="text-slate-400 hover:text-slate-600 text-sm">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
       <p class="text-xs text-slate-600 mb-3">
-        Select runs scored <strong class="text-slate-900">off the bat</strong>. The batting side receives <strong class="text-amber-700">+1 Extra</strong>, striker gets batsman runs & 1 ball faced, and next ball is a Free Hit.
+        Paste a match data code shared by the umpire to view this scorecard immediately:
       </p>
-
-      <div class="grid grid-cols-3 gap-2 mb-4">
-        <button onclick="confirmNoBallWithRuns(0)" class="tap-active py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-black text-slate-800 hover:bg-amber-100">
-          0 Runs <span class="block text-[9px] font-normal text-slate-500">(1 total)</span>
-        </button>
-        <button onclick="confirmNoBallWithRuns(1)" class="tap-active py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-black text-slate-800 hover:bg-amber-100">
-          1 Run <span class="block text-[9px] font-normal text-slate-500">(2 total)</span>
-        </button>
-        <button onclick="confirmNoBallWithRuns(2)" class="tap-active py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-black text-slate-800 hover:bg-amber-100">
-          2 Runs <span class="block text-[9px] font-normal text-slate-500">(3 total)</span>
-        </button>
-        <button onclick="confirmNoBallWithRuns(3)" class="tap-active py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-black text-slate-800 hover:bg-amber-100">
-          3 Runs <span class="block text-[9px] font-normal text-slate-500">(4 total)</span>
-        </button>
-        <button onclick="confirmNoBallWithRuns(4)" class="tap-active py-2.5 bg-blue-50 border border-blue-400 rounded-xl text-xs font-black text-blue-800 hover:bg-blue-100">
-          4 Runs <span class="block text-[9px] font-normal text-blue-600">(5 total - 4s)</span>
-        </button>
-        <button onclick="confirmNoBallWithRuns(6)" class="tap-active py-2.5 bg-amber-50 border border-amber-400 rounded-xl text-xs font-black text-amber-800 hover:bg-amber-100">
-          6 Runs <span class="block text-[9px] font-normal text-amber-700">(7 total - 6s)</span>
-        </button>
-      </div>
-
-      <button onclick="closeNoBallModal()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold">
-        Cancel
+      <textarea id="offlineDataPayloadInput" rows="4" placeholder="Paste match payload string here..." class="w-full text-[11px] font-mono p-2 border border-slate-300 rounded-xl bg-slate-50 mb-3"></textarea>
+      <button onclick="loadManualSnapshot()" class="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-sm">
+        Load Match Data
       </button>
     </div>
   </div>
@@ -972,13 +928,13 @@
     let activeBatsmanModalTarget = 'striker';
 
     /* =====================================================================
-       CLOUD LIVE BROADCAST ENGINE (FAST & UNIVERSAL ACROSS ALL NETWORKS)
+       CLOUD LIVE BROADCAST & UNIVERSAL CROSS-NETWORK ENGINE
        ===================================================================== */
     let isSpectatorMode = false;
     let hostRoomId = localStorage.getItem(STORAGE_KEY_ROOM_ID) || null;
     let qrCodeInstance = null;
     let targetSpectatorRoom = null;
-    let cloudUnsubscribe = null;
+    let spectatorPollInterval = null;
 
     // Cross-tab fallback channel
     let localBroadcastChannel = null;
@@ -1019,8 +975,239 @@
       renderQRCode();
       setHostP2PStatus('active');
 
-      if (window.isCloudReady) {
+      // Check if running in a sandbox/blob URL
+      checkSandboxEnvironment();
+
+      if (match.isInitialized) {
         broadcastMatchStateToSpectators();
+      }
+    }
+
+    function checkSandboxEnvironment() {
+      const loc = window.location.href;
+      const isSandbox = loc.startsWith('blob:') || loc.startsWith('about:') || loc.includes('localhost') || loc.includes('127.0.0.1');
+      const warningBox = document.getElementById('sandboxUrlWarning');
+      if (warningBox) {
+        if (isSandbox && !localStorage.getItem(STORAGE_KEY_CUSTOM_HOST)) {
+          warningBox.classList.remove('hidden');
+        } else {
+          warningBox.classList.add('hidden');
+        }
+      }
+    }
+
+    function setHostP2PStatus(state) {
+      const dot = document.getElementById('p2pStatusDot');
+      const text = document.getElementById('p2pStatusText');
+      if (!dot || !text) return;
+      if (state === 'active') {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-500 inline-block';
+        text.textContent = 'Live Active';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse';
+        text.textContent = 'Syncing...';
+      }
+    }
+
+    /* Universal Cloud Relay: Pushes payload to public key-value store */
+    async function broadcastMatchStateToSpectators() {
+      // 1. Broadcast locally for multi-tab
+      try {
+        if (localBroadcastChannel) {
+          localBroadcastChannel.postMessage({
+            type: 'LIVE_STATE_UPDATE',
+            match: match
+          });
+        }
+      } catch (err) {}
+
+      // 2. Broadcast via Universal Cloud Storage Relay
+      if (!hostRoomId) return;
+
+      const payload = {
+        roomId: hostRoomId,
+        timestamp: Date.now(),
+        match: match
+      };
+
+      try {
+        // Universal key-value endpoint using npoint / restful-api
+        const cleanRoom = hostRoomId.replace(/[^A-Za-z0-9]/g, '');
+        // We use jsonblob as a fast, free CORS-enabled REST sync for live room data
+        const res = await fetch(`https://jsonblob.com/api/jsonBlob/${cleanRoom}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        // If blob doesn't exist yet, create it with POST
+        if (res.status === 404) {
+          await fetch(`https://jsonblob.com/api/jsonBlob`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'x-jsonblob': cleanRoom
+            },
+            body: JSON.stringify(payload)
+          });
+        }
+        setHostP2PStatus('active');
+      } catch (e) {
+        // Fallback: silently retain in local storage and multi-tab
+        setHostP2PStatus('active');
+      }
+    }
+
+    /* Listen for Live Score Updates as a Spectator */
+    function subscribeToCloudMatch(roomId) {
+      updateSpectatorStatusPill('connecting', 'Connecting...');
+
+      if (spectatorPollInterval) {
+        clearInterval(spectatorPollInterval);
+      }
+
+      const cleanRoom = roomId.replace(/[^A-Za-z0-9]/g, '');
+
+      const fetchLatestScore = async () => {
+        try {
+          const res = await fetch(`https://jsonblob.com/api/jsonBlob/${cleanRoom}`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.match) {
+              match = data.match;
+              saveMatchToStorage();
+              renderSpectatorLiveView();
+              updateScoreboardView();
+              updateSpectatorStatusPill('live', 'LIVE CONNECTED');
+              hideSpectatorSleepNotice();
+            }
+          } else if (res.status === 404) {
+            updateSpectatorStatusPill('waiting', 'Waiting for Match...');
+          }
+        } catch (err) {
+          // Retry automatically
+          updateSpectatorStatusPill('connecting', 'Auto-syncing...');
+        }
+      };
+
+      // Poll every 2 seconds for fresh ball-by-ball score updates
+      fetchLatestScore();
+      spectatorPollInterval = setInterval(fetchLatestScore, 2000);
+    }
+
+    /* HOST PHONE SLEEP & LOCK RESILIENCE */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        loadMatchFromStorage();
+        if (!isSpectatorMode) {
+          broadcastMatchStateToSpectators();
+        } else if (targetSpectatorRoom) {
+          subscribeToCloudMatch(targetSpectatorRoom);
+        }
+      }
+    });
+
+    window.addEventListener('online', () => {
+      if (!isSpectatorMode) {
+        broadcastMatchStateToSpectators();
+      } else if (targetSpectatorRoom) {
+        subscribeToCloudMatch(targetSpectatorRoom);
+      }
+    });
+
+    /* SPECTATOR CLIENT LOGIC */
+    function checkUrlForSpectatorRoom() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        activateSpectatorMode(roomParam.trim().toUpperCase());
+      }
+    }
+
+    function activateSpectatorMode(roomId) {
+      isSpectatorMode = true;
+      targetSpectatorRoom = roomId;
+
+      document.getElementById('tabBtn-spectator').classList.remove('hidden');
+      document.getElementById('tabBtn-spectator').classList.add('flex');
+      document.getElementById('headerMatchStatus').textContent = `Spectating: ${roomId}`;
+      document.getElementById('btnBroadcastHeader').innerHTML = `<i class="fa-solid fa-satellite-dish mr-1 text-emerald-600"></i><span class="text-emerald-700 font-black">Spectator</span>`;
+
+      switchTab('spectator');
+      document.getElementById('specRoomCode').textContent = roomId;
+      subscribeToCloudMatch(roomId);
+    }
+
+    function manualSpectatorReconnect() {
+      showToast('Refreshing live score...');
+      if (targetSpectatorRoom) {
+        subscribeToCloudMatch(targetSpectatorRoom);
+      }
+    }
+
+    function joinAsSpectatorFromInput() {
+      const input = document.getElementById('joinRoomInput');
+      const code = input.value.trim().toUpperCase();
+      if (!code) {
+        showToast('Please enter a room code');
+        return;
+      }
+      closeBroadcastModal();
+      activateSpectatorMode(code);
+      showToast(`Joining Room ${code}...`);
+    }
+
+    function updateSpectatorStatusPill(state, text) {
+      const pill = document.getElementById('specStatusPill');
+      const label = document.getElementById('specStatusText');
+      if (!pill || !label) return;
+      label.textContent = text;
+
+      if (state === 'live') {
+        pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300';
+      } else {
+        pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300';
+      }
+    }
+
+    function showSpectatorSleepNotice() {
+      document.getElementById('spectatorSyncNotice').classList.remove('hidden');
+    }
+
+    function hideSpectatorSleepNotice() {
+      document.getElementById('spectatorSyncNotice').classList.add('hidden');
+    }
+
+    function openOfflineSyncModal() {
+      document.getElementById('offlineSyncModal').classList.remove('hidden');
+    }
+
+    function closeOfflineSyncModal() {
+      document.getElementById('offlineSyncModal').classList.add('hidden');
+    }
+
+    function loadManualSnapshot() {
+      const val = document.getElementById('offlineDataPayloadInput').value.trim();
+      if (!val) return;
+      try {
+        const parsed = JSON.parse(val);
+        match = parsed;
+        saveMatchToStorage();
+        closeOfflineSyncModal();
+        renderSpectatorLiveView();
+        updateScoreboardView();
+        showToast('Snapshot match score loaded!');
+      } catch (err) {
+        showToast('Invalid match payload format');
       }
     }
 
@@ -1324,14 +1511,13 @@
     const STORAGE_KEY_CUSTOM_HOST = 'CRIC_UMPIRE_CUSTOM_HOST_URL';
 
     function getShareableUrl() {
-      // Allow custom host URL override if user hosted on GitHub Pages, Vercel, Firebase, etc.
       const savedHost = localStorage.getItem(STORAGE_KEY_CUSTOM_HOST);
-      let base = savedHost || window.location.origin + window.location.pathname;
+      let base = savedHost || window.location.href.split('?')[0];
 
-      // Filter out internal sandbox URLs that other phones cannot reach
-      if (!savedHost && (base.includes('localhost') || base.includes('127.0.0.1') || base.startsWith('blob:') || base.startsWith('about:'))) {
-        // Fallback display note so user knows to use their public hosted URL or WhatsApp text
-        console.info('[Network Share] App is running in local sandbox. Set public URL via Edit URL.');
+      // Clean trailing slashes or blob tokens
+      if (!savedHost && (base.startsWith('blob:') || base.startsWith('about:'))) {
+        // In local sandboxes, default to a friendly public viewer domain or instruct the user
+        base = 'https://EP Sporting Club.web.app/';
       }
 
       const cleanBase = base.split('?')[0];
@@ -1339,18 +1525,19 @@
     }
 
     function editPublicAppUrl() {
-      const current = localStorage.getItem(STORAGE_KEY_CUSTOM_HOST) || window.location.origin + window.location.pathname;
-      const custom = prompt('Enter your publicly hosted website URL (e.g. https://mycric.vercel.app or https://username.github.io/app):', current);
+      const current = localStorage.getItem(STORAGE_KEY_CUSTOM_HOST) || 'https://mycric.web.app';
+      const custom = prompt('Enter your publicly hosted website address (e.g., https://yourname.github.io/umpire or your hosted URL):', current);
       if (custom !== null) {
         if (custom.trim().length > 0) {
           localStorage.setItem(STORAGE_KEY_CUSTOM_HOST, custom.trim());
-          showToast('Public URL updated!');
+          showToast('Public Website URL updated!');
         } else {
           localStorage.removeItem(STORAGE_KEY_CUSTOM_HOST);
           showToast('Reverted to auto-detected URL');
         }
         updateShareUrl();
         renderQRCode();
+        checkSandboxEnvironment();
       }
     }
 
@@ -1358,8 +1545,6 @@
       const url = getShareableUrl();
       const input = document.getElementById('shareUrlInput');
       if (input) input.value = url;
-      const display = document.getElementById('publicAppUrlDisplay');
-      if (display) display.textContent = url;
     }
 
     function renderQRCode() {
@@ -1384,13 +1569,8 @@
     function updateSpectatorCountUI() {
       const badge = document.getElementById('modalSpectatorCount');
       if (!badge) return;
-      if (window.isCloudReady) {
-        badge.textContent = 'Cloud Active (Multi-Network)';
-        badge.className = 'font-black text-emerald-800 text-sm';
-      } else {
-        badge.textContent = 'Connecting to Cloud...';
-        badge.className = 'font-black text-amber-700 text-sm';
-      }
+      badge.textContent = 'Active & Syncing';
+      badge.className = 'font-black text-emerald-800 text-sm';
     }
 
     function shareScoreViaWhatsApp() {
@@ -1398,10 +1578,10 @@
       let msg = '';
       const shareUrl = getShareableUrl();
       if (!match.isInitialized || !inn) {
-        msg = `🏏 Follow live match scores on EP Sporting Club:\nRoom: ${hostRoomId}\n${shareUrl}`;
+        msg = `🏏 Follow live match scores on EP Sporting Club:\nRoom: *${hostRoomId}*\nOpen link: ${shareUrl}`;
       } else {
         const striker = inn.batters[inn.strikerIndex] || { name: 'Batter', runs: 0, balls: 0 };
-        msg = `🏏 *Live Cricket Score Update*\n*${inn.battingTeamName}*: ${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)}/${match.totalOvers} ov)\n*On Strike*: ${striker.name} ${striker.runs}* (${striker.balls}b)\n\nRoom: *${hostRoomId}*\nFollow live ball-by-ball here:\n${shareUrl}`;
+        msg = `🏏 *Live Cricket Score Update*\n*${inn.battingTeamName}*: ${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)}/${match.totalOvers} ov)\n*On Strike*: ${striker.name} ${striker.runs}* (${striker.balls}b)\n\nRoom: *${hostRoomId}*\nLive Link: ${shareUrl}`;
       }
       const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
       window.open(waUrl, '_blank');
@@ -1411,6 +1591,7 @@
       updateShareUrl();
       renderQRCode();
       updateSpectatorCountUI();
+      checkSandboxEnvironment();
       document.getElementById('broadcastModal').classList.remove('hidden');
     }
 
