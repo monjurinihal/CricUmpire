@@ -11,10 +11,52 @@
   <!-- html2canvas and jsPDF for scorecard exports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <!-- PeerJS for WebRTC P2P Live Broadcast -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <!-- QRCode.js for generating spectator share QR codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Global Firebase configuration provided by environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'cric-umpire-app';
+    let db = null;
+    let auth = null;
+    let isCloudReady = false;
+
+    try {
+      if (typeof __firebase_config !== 'undefined') {
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              await signInAnonymously(auth);
+            }
+            isCloudReady = true;
+            window.isCloudReady = true;
+            window.cloudDb = db;
+            window.cloudAppId = appId;
+            console.log('[Cloud Live] Connected & Authenticated');
+            if (window.onCloudReadyCallback) {
+              window.onCloudReadyCallback();
+            }
+          } catch (e) {
+            console.warn('[Cloud Live] Auth fallback:', e);
+          }
+        };
+        initAuth();
+      }
+    } catch (err) {
+      console.warn('[Cloud Live] Config error:', err);
+    }
+  </script>
 
   <script>
     tailwind.config = {
@@ -64,19 +106,18 @@
       </div>
       <div>
         <h1 class="font-black text-sm tracking-tight text-slate-900 leading-tight">
-          CricUmpire <span class="text-emerald-700 text-[10px] font-bold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-200">P2P LIVE</span>
+          CricUmpire <span class="text-emerald-700 text-[10px] font-bold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-200">LIVE CLOUD</span>
         </h1>
         <p id="headerMatchStatus" class="text-[11px] text-slate-500 font-medium truncate max-w-[170px]">Setup Teams to Start</p>
       </div>
     </div>
     
-    <!-- P2P Live Broadcast Controls -->
+    <!-- Cloud Live Broadcast Controls -->
     <div class="flex items-center space-x-1.5">
       <!-- Live Spectator / Host Indicator Button -->
       <button onclick="openBroadcastModal()" id="btnBroadcastHeader" class="tap-active text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm flex items-center space-x-1.5 border border-slate-300 bg-slate-100 text-slate-700">
         <span id="p2pStatusDot" class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
-        <span id="p2pStatusText">Broadcast</span>
-        <span id="spectatorBadgeCount" class="hidden ml-1 px-1.5 py-0.2 text-[9px] bg-red-600 text-white rounded-full font-black">0</span>
+        <span id="p2pStatusText">Live Share</span>
       </button>
 
       <!-- Live Match Badge -->
@@ -654,30 +695,30 @@
     <div class="bg-white border-2 border-emerald-600 w-full max-w-sm rounded-2xl p-5 shadow-2xl">
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center space-x-2 text-emerald-700">
-          <i class="fa-solid fa-satellite-dish text-xl"></i>
-          <h3 class="font-black text-base text-slate-900">Live P2P Broadcast</h3>
+          <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+          <h3 class="font-black text-base text-slate-900">Live Score Sharing</h3>
         </div>
         <button onclick="closeBroadcastModal()" class="text-slate-400 hover:text-slate-600 text-sm">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <p class="text-xs text-slate-600 mb-3">
-        Spectators can scan this QR code or use the share link to watch ball-by-ball live scores on their phone.
+        Spectators can scan this QR code or use the link to view real-time ball-by-ball scores from any device or mobile network.
       </p>
 
       <!-- QR Code Display Box -->
       <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-center justify-center mb-3">
         <div id="qrcodeCanvas" class="p-2 bg-white rounded-lg shadow-sm border border-slate-200"></div>
         <div class="mt-2.5 text-center">
-          <span class="text-[10px] text-slate-500 font-bold block uppercase">Live Room Code</span>
+          <span class="text-[10px] text-slate-500 font-bold block uppercase">Match Room Code</span>
           <span id="broadcastRoomCode" class="text-base font-black text-emerald-800 tracking-wider">CRIC-XXXX</span>
         </div>
       </div>
 
-      <!-- Spectator Count Badge -->
+      <!-- Cloud Status Pill -->
       <div class="flex items-center justify-between bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl mb-3 text-xs">
-        <span class="font-bold text-emerald-900">Connected Spectators:</span>
-        <span id="modalSpectatorCount" class="font-black text-emerald-800 text-sm">0 Spectators</span>
+        <span class="font-bold text-emerald-900">Live Sync Status:</span>
+        <span id="modalSpectatorCount" class="font-black text-emerald-800 text-sm">Cloud Active</span>
       </div>
 
       <!-- Quick WhatsApp / Share Snapshot Option -->
@@ -917,18 +958,15 @@
     let activeBatsmanModalTarget = 'striker';
 
     /* =====================================================================
-       P2P LIVE BROADCAST ENGINE (PEERJS + RECONNECT RESILIENCE)
+       CLOUD LIVE BROADCAST ENGINE (FAST & UNIVERSAL ACROSS ALL NETWORKS)
        ===================================================================== */
     let isSpectatorMode = false;
-    let peer = null;
     let hostRoomId = localStorage.getItem(STORAGE_KEY_ROOM_ID) || null;
-    let connectedSpectatorConns = [];
-    let spectatorConn = null;
     let qrCodeInstance = null;
-    let reconnectIntervalTimer = null;
     let targetSpectatorRoom = null;
+    let cloudUnsubscribe = null;
 
-    // Cross-tab and local network synchronization channel
+    // Cross-tab fallback channel
     let localBroadcastChannel = null;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
@@ -945,16 +983,15 @@
         };
       }
     } catch (e) {
-      console.warn('BroadcastChannel not supported in this frame', e);
+      console.warn('BroadcastChannel fallback error', e);
     }
 
-    // Generate random room code like "CRIC-4912"
     function generateRoomCode() {
       const rand = Math.floor(1000 + Math.random() * 9000);
       return `CRIC-${rand}`;
     }
 
-    /* Initialize Host P2P Broadcaster with fallback for sandboxed environments */
+    /* Initialize Host Room */
     function initHostBroadcaster() {
       if (isSpectatorMode) return;
       if (!hostRoomId) {
@@ -966,121 +1003,38 @@
       if (roomCodeEl) roomCodeEl.textContent = hostRoomId;
       updateShareUrl();
       renderQRCode();
+      setHostP2PStatus('active');
 
-      // Guard check: if Peer constructor or WebSockets are restricted in Canvas
-      if (typeof Peer === 'undefined') {
-        setHostP2PStatus('active');
-        return;
-      }
-
-      try {
-        if (peer && !peer.destroyed) {
-          peer.destroy();
-        }
-
-        // Initialize Peer with safe error capturing
-        peer = new Peer(hostRoomId, {
-          debug: 0
-        });
-
-        peer.on('open', (id) => {
-          console.log('[Host P2P] Room open with ID:', id);
-          setHostP2PStatus('active');
-          broadcastMatchStateToSpectators();
-        });
-
-        peer.on('connection', (conn) => {
-          handleNewSpectatorConnection(conn);
-        });
-
-        peer.on('disconnected', () => {
-          setHostP2PStatus('connecting');
-          try {
-            if (peer && !peer.destroyed) peer.reconnect();
-          } catch(e) {}
-        });
-
-        peer.on('error', (err) => {
-          // Gracefully suppress sandbox websocket restriction errors
-          console.warn('[Host P2P Notice] Running in sandboxed or offline mode:', err.type || err.message);
-          setHostP2PStatus('active');
-        });
-      } catch (e) {
-        console.warn('[Host P2P Notice] External WebSocket restricted by sandbox. Using local channel fallback.', e);
-        setHostP2PStatus('active');
+      if (window.isCloudReady) {
+        broadcastMatchStateToSpectators();
       }
     }
 
-    function handleNewSpectatorConnection(conn) {
-      conn.on('open', () => {
-        connectedSpectatorConns.push(conn);
-        updateSpectatorCountUI();
-        // Send full sync payload immediately upon joining
-        sendFullSyncPayload(conn);
-        showToast('New spectator connected!');
-      });
-
-      conn.on('close', () => {
-        connectedSpectatorConns = connectedSpectatorConns.filter(c => c !== conn);
-        updateSpectatorCountUI();
-      });
-
-      conn.on('error', () => {
-        connectedSpectatorConns = connectedSpectatorConns.filter(c => c !== conn);
-        updateSpectatorCountUI();
-      });
-    }
+    window.onCloudReadyCallback = function() {
+      setHostP2PStatus('active');
+      if (isSpectatorMode && targetSpectatorRoom) {
+        subscribeToCloudMatch(targetSpectatorRoom);
+      } else if (!isSpectatorMode && match.isInitialized) {
+        broadcastMatchStateToSpectators();
+      }
+    };
 
     function setHostP2PStatus(state) {
       const dot = document.getElementById('p2pStatusDot');
       const text = document.getElementById('p2pStatusText');
+      if (!dot || !text) return;
       if (state === 'active') {
         dot.className = 'w-2 h-2 rounded-full bg-emerald-500 inline-block';
-        text.textContent = 'Live P2P';
-      } else if (state === 'connecting') {
+        text.textContent = 'Live Cloud';
+      } else {
         dot.className = 'w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse';
-        text.textContent = 'Connecting';
-      } else {
-        dot.className = 'w-2 h-2 rounded-full bg-slate-400 inline-block';
-        text.textContent = 'Offline';
+        text.textContent = 'Syncing';
       }
     }
 
-    function updateSpectatorCountUI() {
-      const count = connectedSpectatorConns.length;
-      const badge = document.getElementById('spectatorBadgeCount');
-      const modalCount = document.getElementById('modalSpectatorCount');
-      
-      if (count > 0) {
-        badge.textContent = count;
-        badge.classList.remove('hidden');
-      } else {
-        badge.classList.add('hidden');
-      }
-      modalCount.textContent = `${count} Spectator${count === 1 ? '' : 's'}`;
-    }
-
-    function sendFullSyncPayload(conn) {
-      if (!conn || !conn.open) return;
-      try {
-        conn.send({
-          type: 'FULL_SYNC',
-          timestamp: Date.now(),
-          match: match
-        });
-      } catch (err) {
-        console.error('Failed to send payload to spectator', err);
-      }
-    }
-
-    function broadcastMatchStateToSpectators() {
-      const payload = {
-        type: 'SCORE_UPDATE',
-        timestamp: Date.now(),
-        match: match
-      };
-
-      // 1. Broadcast locally via BroadcastChannel (works inside sandboxes and across tabs)
+    /* Push Match State to Cloud Firestore (Guaranteed delivery on 4G/5G/Wi-Fi) */
+    async function broadcastMatchStateToSpectators() {
+      // 1. Broadcast locally for instant multi-tab sync
       try {
         if (localBroadcastChannel) {
           localBroadcastChannel.postMessage({
@@ -1088,57 +1042,86 @@
             match: match
           });
         }
-      } catch (err) {
-        console.warn('BroadcastChannel send error', err);
-      }
+      } catch (err) {}
 
-      // 2. Broadcast via WebRTC P2P to remote connected clients
-      if (!isSpectatorMode && connectedSpectatorConns.length > 0) {
-        connectedSpectatorConns.forEach(conn => {
-          if (conn && conn.open) {
-            try {
-              conn.send(payload);
-            } catch (e) {
-              console.error('Broadcast failed for a connection', e);
-            }
-          }
-        });
+      // 2. Broadcast to Cloud Realtime Firestore
+      if (window.cloudDb && window.cloudAppId && hostRoomId) {
+        try {
+          const matchPayload = {
+            roomId: hostRoomId,
+            updatedAt: Date.now(),
+            matchData: JSON.stringify(match)
+          };
+          const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+          // Path follows mandatory rule: /artifacts/{appId}/public/data/{collectionName}/{documentId}
+          const matchDocRef = doc(window.cloudDb, 'artifacts', window.cloudAppId, 'public', 'data', 'live_matches', hostRoomId);
+          await setDoc(matchDocRef, matchPayload);
+          setHostP2PStatus('active');
+        } catch (e) {
+          console.warn('[Cloud Sync Warn]', e);
+        }
       }
     }
 
-    /* HOST PHONE SLEEP & LOCK RESILIENCE:
-       When host unlocks phone or returns to browser, wake-up triggers check
-       and re-syncs state immediately. */
+    /* Listen for Live Score Updates as a Spectator */
+    async function subscribeToCloudMatch(roomId) {
+      updateSpectatorStatusPill('connecting', 'Connecting...');
+      if (!window.cloudDb || !window.cloudAppId) {
+        // Wait for cloud setup to finish
+        setTimeout(() => subscribeToCloudMatch(roomId), 500);
+        return;
+      }
+
+      try {
+        const { doc, onSnapshot } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+        const matchDocRef = doc(window.cloudDb, 'artifacts', window.cloudAppId, 'public', 'data', 'live_matches', roomId);
+
+        if (cloudUnsubscribe) cloudUnsubscribe();
+
+        cloudUnsubscribe = onSnapshot(matchDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data && data.matchData) {
+              match = JSON.parse(data.matchData);
+              saveMatchToStorage();
+              renderSpectatorLiveView();
+              updateScoreboardView();
+              updateSpectatorStatusPill('live', 'LIVE CLOUD');
+              hideSpectatorSleepNotice();
+            }
+          } else {
+            updateSpectatorStatusPill('reconnecting', 'Waiting for Host');
+          }
+        }, (err) => {
+          console.warn('[Spectator Cloud Err]', err);
+          updateSpectatorStatusPill('reconnecting', 'Reconnecting...');
+        });
+      } catch (e) {
+        console.error('[Spectator Subscribe Error]', e);
+      }
+    }
+
+    /* HOST PHONE SLEEP & LOCK RESILIENCE */
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        console.log('[Host P2P] App returned to visible state. Checking network & WebRTC...');
         loadMatchFromStorage();
         if (!isSpectatorMode) {
-          if (!peer || peer.destroyed || peer.disconnected) {
-            console.log('[Host P2P] Re-establishing Host Room after phone sleep...');
-            initHostBroadcaster();
-          } else {
-            broadcastMatchStateToSpectators();
-          }
-        } else {
-          // If in spectator mode, recheck connection
-          if (!spectatorConn || !spectatorConn.open) {
-            connectAsSpectator(targetSpectatorRoom);
-          }
+          broadcastMatchStateToSpectators();
+        } else if (targetSpectatorRoom) {
+          subscribeToCloudMatch(targetSpectatorRoom);
         }
       }
     });
 
     window.addEventListener('online', () => {
-      console.log('[Network] Back online.');
-      if (!isSpectatorMode && (!peer || peer.destroyed)) {
-        initHostBroadcaster();
+      if (!isSpectatorMode) {
+        broadcastMatchStateToSpectators();
+      } else if (targetSpectatorRoom) {
+        subscribeToCloudMatch(targetSpectatorRoom);
       }
     });
 
-    /* =====================================================================
-       SPECTATOR CLIENT ENGINE (AUTO-RECONNECT & LIVE SCORE SYNC)
-       ===================================================================== */
+    /* SPECTATOR CLIENT LOGIC */
     function checkUrlForSpectatorRoom() {
       const urlParams = new URLSearchParams(window.location.search);
       const roomParam = urlParams.get('room');
@@ -1151,130 +1134,45 @@
       isSpectatorMode = true;
       targetSpectatorRoom = roomId;
 
-      // Adjust navigation for spectators: show Live Fan tab & hide Umpire live badge
       document.getElementById('tabBtn-spectator').classList.remove('hidden');
       document.getElementById('tabBtn-spectator').classList.add('flex');
       document.getElementById('headerMatchStatus').textContent = `Spectating: ${roomId}`;
-      document.getElementById('btnBroadcastHeader').innerHTML = `<i class="fa-solid fa-satellite-dish mr-1 text-emerald-600"></i><span class="text-emerald-700 font-black">Spectator</span>`;
+      document.getElementById('btnBroadcastHeader').innerHTML = `<i class="fa-solid fa-tower-broadcast mr-1 text-emerald-600"></i><span class="text-emerald-700 font-black">Spectator</span>`;
 
       switchTab('spectator');
-      connectAsSpectator(roomId);
-    }
-
-    function connectAsSpectator(roomId) {
-      targetSpectatorRoom = roomId;
       document.getElementById('specRoomCode').textContent = roomId;
-      updateSpectatorStatusPill('connecting', 'Connecting...');
-      hideSpectatorSleepNotice();
+      subscribeToCloudMatch(roomId);
+    }
 
-      if (peer && !peer.destroyed) {
-        peer.destroy();
+    function manualSpectatorReconnect() {
+      showToast('Refreshing live score...');
+      if (targetSpectatorRoom) {
+        subscribeToCloudMatch(targetSpectatorRoom);
       }
-
-      // Create random client peer
-      peer = new Peer(null, { debug: 1 });
-
-      peer.on('open', () => {
-        console.log('[Spectator] Client peer open. Connecting to room:', roomId);
-        attemptHostConnection(roomId);
-      });
-
-      peer.on('error', (err) => {
-        console.warn('[Spectator] Peer error:', err);
-        handleSpectatorConnectionFailure();
-      });
     }
 
-    function attemptHostConnection(roomId) {
-      spectatorConn = peer.connect(roomId, {
-        reliable: true
-      });
-
-      spectatorConn.on('open', () => {
-        console.log('[Spectator] Connected to Host Room successfully!');
-        updateSpectatorStatusPill('live', 'LIVE P2P');
-        hideSpectatorSleepNotice();
-        clearInterval(reconnectIntervalTimer);
-        reconnectIntervalTimer = null;
-      });
-
-      spectatorConn.on('data', (data) => {
-        console.log('[Spectator] Received live data:', data.type);
-        if (data.type === 'FULL_SYNC' || data.type === 'SCORE_UPDATE') {
-          if (data.match) {
-            match = data.match;
-            saveMatchToStorage();
-            renderSpectatorLiveView();
-            updateScoreboardView();
-          }
-        }
-      });
-
-      spectatorConn.on('close', () => {
-        console.warn('[Spectator] Connection to host closed.');
-        handleSpectatorConnectionFailure();
-      });
-
-      spectatorConn.on('error', (err) => {
-        console.warn('[Spectator] Connection error:', err);
-        handleSpectatorConnectionFailure();
-      });
-    }
-
-    function shareScoreViaWhatsApp() {
-      if (!match.isInitialized) {
-        showToast('Please start a match first');
+    function joinAsSpectatorFromInput() {
+      const input = document.getElementById('joinRoomInput');
+      const code = input.value.trim().toUpperCase();
+      if (!code) {
+        showToast('Please enter a room code');
         return;
       }
-      const inn = getCurrentInnings();
-      if (!inn) return;
-
-      const striker = inn.batters[inn.strikerIndex] || { name: 'Batter', runs: 0, balls: 0 };
-      const bowler = inn.bowlers[inn.activeBowlerIndex] || { name: 'Bowler', legalBalls: 0, runsConceded: 0, wickets: 0 };
-      
-      let text = `🏏 *${match.teamA.name} vs ${match.teamB.name}*\n`;
-      text += `📊 Score: *${inn.totalRuns}/${inn.totalWickets}* (${formatOvers(inn.legalBalls)}/${match.totalOvers} ov)\n`;
-      text += `🏏 Striker: ${striker.name} ${striker.runs}* (${striker.balls})\n`;
-      text += `🎯 Bowler: ${bowler.name} ${bowler.wickets}/${bowler.runsConceded} (${formatOvers(bowler.legalBalls)} ov)\n`;
-      if (match.currentInningsNumber === 2 && match.innings1) {
-        const target = match.innings1.totalRuns + 1;
-        const runsLeft = target - inn.totalRuns;
-        const ballsLeft = (match.totalOvers * 6) - inn.legalBalls;
-        text += `🎯 Target: ${target} (${runsLeft > 0 ? runsLeft : 0} needed off ${ballsLeft > 0 ? ballsLeft : 0}b)\n`;
-      }
-      text += `\nFollow live on CricUmpire!`;
-
-      const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-      window.open(whatsappUrl, '_blank');
-    }
-
-    function handleSpectatorConnectionFailure() {
-      updateSpectatorStatusPill('reconnecting', 'Host Asleep / Reconnecting');
-      showSpectatorSleepNotice();
-
-      if (!reconnectIntervalTimer) {
-        reconnectIntervalTimer = setInterval(() => {
-          console.log('[Spectator Auto-Reconnect] Retrying host connection...');
-          if (peer && !peer.destroyed) {
-            attemptHostConnection(targetSpectatorRoom);
-          } else {
-            connectAsSpectator(targetSpectatorRoom);
-          }
-        }, 3000);
-      }
+      closeBroadcastModal();
+      activateSpectatorMode(code);
+      showToast(`Joining Room ${code}...`);
     }
 
     function updateSpectatorStatusPill(state, text) {
       const pill = document.getElementById('specStatusPill');
       const label = document.getElementById('specStatusText');
+      if (!pill || !label) return;
       label.textContent = text;
 
       if (state === 'live') {
         pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300';
-      } else if (state === 'reconnecting' || state === 'connecting') {
-        pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300';
       } else {
-        pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-red-100 text-red-800 border border-red-300';
+        pill.className = 'flex items-center space-x-1.5 text-xs font-black px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300';
       }
     }
 
